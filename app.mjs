@@ -1,6 +1,7 @@
 import express from 'express';
 import authRouter from './src/routes/authRoute.mjs';
 import courseRouter from './src/routes/courseRoute.mjs';
+import quizRouter from './src/routes/quizroute.mjs';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -14,6 +15,7 @@ app.get('/', (req, res) => {
 });
 app.use('/api/auth', authRouter);
 app.use('/api/courses', courseRouter);
+app.use('/api/quizzes', quizRouter);
 
 // Start server
 app.listen(PORT, () => {

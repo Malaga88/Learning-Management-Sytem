@@ -6,8 +6,8 @@ import { getCourseById } from "../controllers/courseController.mjs";
 
 const courseRouter = Router();
 
-courseRouter.post("/", createCourse);
-courseRouter.get("/", getCourses);
-courseRouter.get("/:id", getCourseById);
+courseRouter.post("/create-course", createCourse);
+courseRouter.get("/view-courses", getCourses);
+courseRouter.get("/view-course/:id", getCourseById);
 
 export default courseRouter;

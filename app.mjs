@@ -1,5 +1,6 @@
 import express from 'express';
 import authRouter from './src/routes/authRoute.mjs';
+import courseRouter from './src/routes/courseRoute.mjs';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -12,6 +13,7 @@ app.get('/', (req, res) => {
     res.send('Welcome to the LMS App!');
 });
 app.use('/api/auth', authRouter);
+app.use('/api/courses', courseRouter);
 
 // Start server
 app.listen(PORT, () => {

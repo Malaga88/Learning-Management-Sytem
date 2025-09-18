@@ -1,4 +1,3 @@
-import e from 'express';
 import enrollmentModel from '../models/enrollmentModel.mjs';
 
 export const enrollInCourse = async (req, res) => {

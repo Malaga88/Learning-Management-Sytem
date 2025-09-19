@@ -1,17 +1,16 @@
 import express from "express";
 import {
-  enrollUser,
+  enrollInCourse,
   updateProgress,
   getUserEnrollments,
   dropCourse,
-} from "../controllers/enrollmentController.js";
+} from "../controllers/enrollmentController.mjs";
 
-const router = express.Router();
+const enrollmentRouter = express.Router();
 
+enrollmentRouter.post("/", enrollInCourse);
+enrollmentRouter.patch("/:enrollmentId/progress", updateProgress);
+enrollmentRouter.get("/user/:userId", getUserEnrollments);
+enrollmentRouter.patch("/:enrollmentId/drop", dropCourse);
 
-router.post("/", enrollUser);
-router.patch("/:enrollmentId/progress", updateProgress);
-router.get("/user/:userId", getUserEnrollments);
-router.patch("/:enrollmentId/drop", dropCourse);
-
-export default router;
+export default enrollmentRouter;

@@ -91,7 +91,7 @@ export const deleteQuiz = async (req, res) => {
 };
 
 // Check answers (for submission)
-export const submitQuiz = async (req, res) => {
+export const checkAnswer = async (req, res) => {
     try {
         const { id } = req.params; // quizId
         const { answers } = req.body; // { questionId: selectedOption }

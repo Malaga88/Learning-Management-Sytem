@@ -1,23 +1,23 @@
 import express from "express";
 import {
   submitGrade,
-  getUserGrades,
-  getQuizGrades,
+  getGrades,
+  getQuizGrade,
   getUserQuizGrade,
-} from "../controllers/gradeController.js";
+} from "../controllers/gradeController.mjs";
 
-const router = express.Router();
+const gradeRouter = express.Router();
 
 // POST /api/grades → submit grade
-router.post("/", submitGrade);
+gradeRouter.post("/", submitGrade);
 
 // GET /api/grades/user/:userId → all grades for user
-router.get("/user/:userId", getUserGrades);
+gradeRouter.get("/user/:userId", getGrades);
 
 // GET /api/grades/quiz/:quizId → all grades for a quiz
-router.get("/quiz/:quizId", getQuizGrades);
+gradeRouter.get("/quiz/:quizId", getQuizGrade);
 
 // GET /api/grades/:userId/:quizId → one grade
-router.get("/:userId/:quizId", getUserQuizGrade);
+gradeRouter.get("/:userId/:quizId", getUserQuizGrade);
 
-export default gradeRoute;
+export default gradeRouter;

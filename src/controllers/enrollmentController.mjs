@@ -1,19 +1,37 @@
-import enrollmentModel from '../models/enrollmentModel.mjs';
+import enrollmentModel from "../models/enrollmentModel.mjs";
+import userModel from "../models/userModel.mjs";
 
 export const enrollInCourse = async (req, res) => {
-    try {
-        const { userId, courseId } = req.body;
-        const existingEnrollment = await enrollmentModel.findOne({ userId, courseId });
-        if (existingEnrollment) {
-            return res.status(409).json({ message: "User already enrolled in this course" });
-        }
-        const newEnrollment = new enrollmentModel({ userId, courseId });
-        await newEnrollment.save();
-        res.status(201).json({ message: "Enrolled in course successfully", enrollment: newEnrollment });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: "Error enrolling in course" });
+  try {
+    const { userId, courseId } = req.body;
+
+    // 1. Check if already enrolled
+    const existingUser = await userModel.findById(userId);
+    if (!existingUser) {
+      return res.status(404).json({ message: "User not found" });
     }
+    const existingEnrollment = await enrollmentModel.findOne({ user: userId, course: courseId });
+    if (existingEnrollment) {
+      return res.status(409).json({ message: "User already enrolled in this course" });
+    }
+
+    // 2. Create new enrollment
+    const newEnrollment = new enrollmentModel({
+      user: userId,
+      course: courseId,
+    });
+
+    await newEnrollment.save();
+
+    res.status(201).json({
+      message: "Enrolled in course successfully",
+      enrollment: newEnrollment,
+    });
+
+  } catch (error) {
+    console.error(error);
+    res.status(500).json({ message: "Error enrolling in course", error: error.message });
+  }
 };
 
 export const updateProgress = async (req, res) => {

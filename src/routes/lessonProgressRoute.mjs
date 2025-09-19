@@ -1,12 +1,12 @@
 import express from "express";
 import { markLessonComplete, getUserCourseProgress } from "../controllers/lessonProgressController.mjs";
 
-const router = express.Router();
+const lessonProgressRouter = express.Router();
 
 // Mark a lesson as complete
-router.post("/complete", markLessonComplete);
+lessonProgressRouter.post("/complete", markLessonComplete);
 
 // Get progress + percentage for a user in a course
-router.get("/:userId/course/:courseId", getUserCourseProgress);
+lessonProgressRouter.get("/:userId/course/:courseId", getUserCourseProgress);
 
-export default router;
+export default lessonProgressRouter;

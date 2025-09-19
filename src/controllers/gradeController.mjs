@@ -1,29 +1,67 @@
 import gradeModel from "../models/gradeModel.mjs";
 import userModel from "../models/userModel.mjs";
 import quizModel from "../models/quizModel.mjs";
+import enrollmentModel from "../models/enrollmentModel.mjs";
+
 
 export const submitGrade = async (req, res) => {
   try {
-    const { userId, quizId, score, maxScore } = req.body;
+    const { userId, quizId, score, maxScore, attempt = 1 } = req.body;
 
-    // Validate user
+
     const user = await userModel.findById(userId);
-    const quiz = await quizModel.findById(quizId);
-    if (!user || !quiz) return res.status(404).json({ message: "User or Quiz not found" });
+    const quiz = await quizModel.findById(quizId).populate("course");
+    if (!user || !quiz) {
+      return res.status(404).json({ message: "User or quiz not found" });
+    }
 
-    // Create grade
-    const grade = new gradeModel({
-      user: userId,
-      quiz: quizId,
-      score,
-      maxScore,
+
+    const percentage = (score / maxScore) * 100;
+    const status = percentage >= 50 ? "passed" : "failed";
+
+
+    const grade = await gradeModel.findOneAndUpdate(
+      { user: userId, quiz: quizId },
+      { score, maxScore, status, attempt },
+      { new: true, upsert: true, runValidators: true }
+    );
+
+
+    const courseId = quiz.course._id;
+
+
+    let enrollment = await enrollmentModel.findOne({ user: userId, course: courseId });
+    if (!enrollment) {
+      enrollment = await enrollmentModel.create({ user: userId, course: courseId });
+    }
+
+    // Count quizzes in this course
+    const totalQuizzes = await quizModel.countDocuments({ course: courseId });
+
+    // Count how many quizzes user has grades for (passed or failed)
+    const completedQuizzes = await gradeModel.countDocuments({ user: userId, quiz: { $in: await quizModel.find({ course: courseId }).distinct("_id") } });
+
+    // Calculate progress
+    const progress = Math.round((completedQuizzes / totalQuizzes) * 100);
+
+    enrollment.progress = progress;
+    if (progress === 100) {
+      enrollment.status = "completed";
+      enrollment.completedAt = new Date();
+    }
+
+    await enrollment.save();
+
+    res.status(201).json({
+      message: "Grade submitted and progress updated",
+      grade,
+      enrollment,
     });
-    await grade.save();
-
-    res.status(201).json({ message: "Grade created", grade });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Error creating grade" });
+  } catch (err) {
+    if (err.code === 11000) {
+      return res.status(400).json({ message: "Grade already exists for this quiz" });
+    }
+    res.status(500).json({ message: "Server error", error: err.message });
   }
 };
 
@@ -75,3 +113,6 @@ export const getUserQuizGrade = async (req, res) => {
     res.status(500).json({ message: "Server error", error: err.message });
   }
 };
+
+
+

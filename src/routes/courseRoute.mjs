@@ -1,8 +1,9 @@
 import express from "express";
 import { Router } from "express";
-import { createCourse } from "../controllers/courseController.mjs";
-import { getCourses } from "../controllers/courseController.mjs";
-import { getCourseById } from "../controllers/courseController.mjs";
+import { createCourse, 
+    getCourses,
+    getCourseById
+ } from "../controllers/courseController.mjs";
 
 const courseRouter = Router();
 

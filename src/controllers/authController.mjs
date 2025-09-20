@@ -2,15 +2,21 @@ import userModel from "../models/userModel.mjs";
 import jsonwebtoken from "jsonwebtoken";
 import bcrypt from "bcrypt";
 
+
 export const registerUser = async (req, res) => {
     try {
-        const { name, email, password , role} = req.body;
-        const hashedPassword = await bcrypt.hash(password, 10);
-        const newUser = new userModel({ name, email, password: hashedPassword, role });
+        const { name, email, password, role } = req.body;
+        
+        // Check existing user first
         const existingUser = await userModel.findOne({ email });
         if (existingUser) {
             return res.status(409).json({ message: "User already exists" });
         }
+        
+        // Then hash password
+        const hashedPassword = await bcrypt.hash(password, 12);
+        const newUser = new userModel({ name, email, password: hashedPassword, role });
+        
         await newUser.save();
         res.status(201).json({ message: "User registered successfully", user: newUser });
     } catch (error) {

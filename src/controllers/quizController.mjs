@@ -1,224 +1,357 @@
 import quizModel from "../models/quizModel.mjs";
 import questionModel from "../models/questionModel.mjs";
 import gradeModel from "../models/gradeModel.mjs";
-import moduleProgressModel from "../models/moduleProgressModel.mjs";
-import courseProgressModel from "../models/courseProgressModel.mjs";
-import moduleModel from "../models/moduleModel.mjs";
+import enrollmentModel from "../models/enrollmentModel.mjs";
+import courseModel from "../models/courseModel.mjs";
 
-// Create a new quiz with optional questions
 export const createQuiz = async (req, res) => {
-  try {
-    const { moduleId, title, description, timeLimit, questions } = req.body;
-
-    const newQuiz = new quizModel({ module: moduleId, title, description, timeLimit });
-    await newQuiz.save();
-
-    if (questions && questions.length > 0) {
-      const createdQuestions = await questionModel.insertMany(
-        questions.map(q => ({ ...q, quiz: newQuiz._id }))
-      );
-      newQuiz.questions = createdQuestions.map(q => q._id);
-      await newQuiz.save();
-    }
-
-    res.status(201).json({ message: "Quiz created successfully", quiz: newQuiz });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Error creating quiz" });
-  }
-};
-
-// Get all quizzes (with question count only)
-export const getQuizzes = async (req, res) => {
-  try {
-    const quizzes = await quizModel.find()
-      .populate("module", "title")
-      .lean();
-
-    const quizzesWithCount = quizzes.map(quiz => ({
-      ...quiz,
-      questionCount: quiz.questions?.length || 0
-    }));
-
-    res.status(200).json({
-      message: "Quizzes retrieved successfully",
-      quizzes: quizzesWithCount
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Error retrieving quizzes" });
-  }
-};
-
-// Get quiz by ID (with questions)
-export const getQuizById = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const quiz = await quizModel.findById(id).populate("questions");
-    if (!quiz) return res.status(404).json({ message: "Quiz not found" });
-
-    res.status(200).json({ message: "Quiz retrieved successfully", quiz });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Error retrieving quiz" });
-  }
-};
-
-// Update quiz
-export const updateQuiz = async (req, res) => {
-  try {
-    const { id } = req.params;
-    const { title, description, timeLimit } = req.body;
-
-    const updatedQuiz = await quizModel.findByIdAndUpdate(
-      id,
-      { title, description, timeLimit },
-      { new: true }
-    );
-
-    if (!updatedQuiz) return res.status(404).json({ message: "Quiz not found" });
-
-    res.status(200).json({ message: "Quiz updated successfully", quiz: updatedQuiz });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Error updating quiz" });
-  }
-};
-
-// Delete quiz and related questions
-export const deleteQuiz = async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    const deletedQuiz = await quizModel.findByIdAndDelete(id);
-    if (!deletedQuiz) return res.status(404).json({ message: "Quiz not found" });
-
-    await questionModel.deleteMany({ quiz: id });
-
-    res.status(200).json({ message: "Quiz and related questions deleted successfully" });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Error deleting quiz" });
-  }
-};
-
-
-export const checkAnswer = async (req, res) => {
-  try {
-    const { id } = req.params; // quizId
-    const { userId, answers } = req.body;
-
-    const quiz = await quizModel.findById(id).populate("questions");
-    if (!quiz) return res.status(404).json({ message: "Quiz not found" });
-
-    let score = 0;
-    const results = [];
-
-    const questionIds = answers.map(a => a.questionId);
-    const questions = await questionModel.find({ _id: { $in: questionIds } });
-
-    for (const ans of answers) {
-      const question = questions.find(q => q._id.toString() === ans.questionId);
-      if (!question) continue;
-
-      const isCorrect = question.correctAnswer === ans.selectedOption;
-      if (isCorrect) score++;
-
-      results.push({
-        question: question.text,
-        selected: ans.selectedOption,
-        correct: question.correctAnswer,
-        isCorrect
-      });
-    }
-
-    const maxScore = quiz.questions.length;
-    const percentage = ((score / maxScore) * 100).toFixed(2);
-    const status = percentage >= 70 ? "passed" : "failed";
-
-    // --- Save grade attempt ---
-    let grade = await gradeModel.findOne({ user: userId, quiz: id });
-
-    if (grade) {
-      grade.score = score;
-      grade.maxScore = maxScore;
-      grade.status = status;
-      grade.attempt += 1;
-      await grade.save();
-    } else {
-      grade = new gradeModel({
-        user: userId,
-        quiz: id,
-        score,
-        maxScore,
-        status,
-        attempt: 1
-      });
-      await grade.save();
-    }
-
-    // --- Mark module progress if passed ---
-    if (status === "passed") {
-      const moduleId = quiz.module;
-      let progress = await moduleProgressModel.findOne({ user: userId, module: moduleId });
-
-      if (progress) {
-        progress.status = "completed";
-        progress.completedAt = new Date();
-        await progress.save();
-      } else {
-        await moduleProgressModel.create({
-          user: userId,
-          module: moduleId,
-          status: "completed",
-          completedAt: new Date()
-        });
-      }
-
-      // --- Check if all modules in the course are completed ---
-      const module = await moduleModel.findById(moduleId);
-      if (module) {
-        const courseId = module.course;
-
-        // Total modules in course
-        const allModules = await moduleModel.find({ course: courseId }).select("_id");
-        const completedModules = await moduleProgressModel.find({
-          user: userId,
-          module: { $in: allModules.map(m => m._id) },
-          status: "completed"
-        });
-
-        if (completedModules.length === allModules.length) {
-          let courseProgress = await courseProgressModel.findOne({ user: userId, course: courseId });
-
-          if (courseProgress) {
-            courseProgress.status = "completed";
-            courseProgress.completedAt = new Date();
-            await courseProgress.save();
-          } else {
-            await courseProgressModel.create({
-              user: userId,
-              course: courseId,
-              status: "completed",
-              completedAt: new Date()
+    try {
+        const { 
+            courseId, 
+            title, 
+            description, 
+            timeLimit, 
+            passingScore,
+            maxAttempts,
+            shuffleQuestions,
+            showCorrectAnswers,
+            allowReview,
+            order,
+            questions 
+        } = req.body;
+        
+        // Verify course exists
+        const course = await courseModel.findById(courseId);
+        if (!course) {
+            return res.status(404).json({ 
+                success: false,
+                message: "Course not found" 
             });
-          }
         }
-      }
+        
+        // Create quiz
+        const newQuiz = new quizModel({ 
+            course: courseId, 
+            title: title.trim(), 
+            description: description?.trim(), 
+            timeLimit,
+            passingScore: passingScore || 60,
+            maxAttempts: maxAttempts || 3,
+            shuffleQuestions: shuffleQuestions || false,
+            showCorrectAnswers: showCorrectAnswers !== false,
+            allowReview: allowReview !== false,
+            order
+        });
+        
+        await newQuiz.save();
+        
+        // If questions are provided, create and link them
+        if (questions && questions.length > 0) {
+            const createdQuestions = await questionModel.insertMany(
+                questions.map((q, index) => ({ 
+                    ...q, 
+                    quiz: newQuiz._id,
+                    order: q.order || index + 1
+                }))
+            );
+            newQuiz.questions = createdQuestions.map(q => q._id);
+            await newQuiz.save();
+        }
+        
+        res.status(201).json({ 
+            success: true,
+            message: "Quiz created successfully", 
+            data: newQuiz 
+        });
+    } catch (error) {
+        console.error('Create quiz error:', error);
+        res.status(500).json({ 
+            success: false,
+            message: "Error creating quiz" 
+        });
     }
+};
 
-    res.status(200).json({
-      message: "Quiz evaluated successfully",
-      quiz: quiz.title,
-      score,
-      maxScore,
-      percentage,
-      status,
-      attempt: grade.attempt,
-      results
-    });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Error checking answers" });
-  }
+export const getQuizzes = async (req, res) => {
+    try {
+        const { courseId, published } = req.query;
+        
+        const filter = {};
+        if (courseId) filter.course = courseId;
+        if (published !== undefined) filter.isPublished = published === 'true';
+        
+        const quizzes = await quizModel.find(filter)
+            .populate("course", "title")
+            .populate('questionCount')
+            .sort({ order: 1, createdAt: 1 })
+            .lean();
+        
+        res.status(200).json({
+            success: true,
+            message: "Quizzes retrieved successfully",
+            data: quizzes
+        });
+    } catch (error) {
+        console.error('Get quizzes error:', error);
+        res.status(500).json({ 
+            success: false,
+            message: "Error retrieving quizzes" 
+        });
+    }
+};
+
+export const getQuizById = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { includeAnswers = false } = req.query;
+        
+        let quiz = await quizModel.findById(id)
+            .populate("course", "title description")
+            .populate({
+                path: "questions",
+                select: includeAnswers === 'true' ? '' : '-correctAnswer -options.isCorrect',
+                options: { sort: { order: 1 } }
+            });
+        
+        if (!quiz) {
+            return res.status(404).json({ 
+                success: false,
+                message: "Quiz not found" 
+            });
+        }
+        
+        res.status(200).json({ 
+            success: true,
+            message: "Quiz retrieved successfully", 
+            data: quiz 
+        });
+    } catch (error) {
+        console.error('Get quiz by ID error:', error);
+        res.status(500).json({ 
+            success: false,
+            message: "Error retrieving quiz" 
+        });
+    }
+};
+
+export const updateQuiz = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const updates = req.body;
+        
+        // Remove course from updates
+        delete updates.course;
+        
+        const updatedQuiz = await quizModel.findByIdAndUpdate(
+            id,
+            updates,
+            { new: true, runValidators: true }
+        ).populate("course", "title");
+        
+        if (!updatedQuiz) {
+            return res.status(404).json({ 
+                success: false,
+                message: "Quiz not found" 
+            });
+        }
+        
+        res.status(200).json({ 
+            success: true,
+            message: "Quiz updated successfully", 
+            data: updatedQuiz 
+        });
+    } catch (error) {
+        console.error('Update quiz error:', error);
+        res.status(500).json({ 
+            success: false,
+            message: "Error updating quiz" 
+        });
+    }
+};
+
+export const deleteQuiz = async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        const deletedQuiz = await quizModel.findByIdAndDelete(id);
+        if (!deletedQuiz) {
+            return res.status(404).json({ 
+                success: false,
+                message: "Quiz not found" 
+            });
+        }
+        
+        // Delete related questions and grades
+        await questionModel.deleteMany({ quiz: id });
+        await gradeModel.deleteMany({ quiz: id });
+        
+        res.status(200).json({ 
+            success: true,
+            message: "Quiz and related data deleted successfully" 
+        });
+    } catch (error) {
+        console.error('Delete quiz error:', error);
+        res.status(500).json({ 
+            success: false,
+            message: "Error deleting quiz" 
+        });
+    }
+};
+
+// Submit quiz attempt
+export const submitQuizAttempt = async (req, res) => {
+    try {
+        const { id: quizId } = req.params;
+        const { answers, timeSpent, userAgent } = req.body;
+        const userId = req.user.id;
+        const ipAddress = req.ip;
+        
+        // Get quiz with questions
+        const quiz = await quizModel.findById(quizId).populate("questions course");
+        if (!quiz) {
+            return res.status(404).json({ 
+                success: false,
+                message: "Quiz not found" 
+            });
+        }
+        
+        // Check if user is enrolled in the course
+        const enrollment = await enrollmentModel.findOne({ 
+            user: userId, 
+            course: quiz.course._id,
+            status: 'active'
+        });
+        if (!enrollment) {
+            return res.status(403).json({ 
+                success: false,
+                message: "You must be enrolled in this course to take the quiz" 
+            });
+        }
+        
+        // Get or create grade record
+        let grade = await gradeModel.findOne({ user: userId, quiz: quizId });
+        
+        // Check attempt limits
+        if (grade && grade.attempts.length >= quiz.maxAttempts) {
+            return res.status(400).json({ 
+                success: false,
+                message: `Maximum attempts (${quiz.maxAttempts}) reached for this quiz` 
+            });
+        }
+        
+        // Calculate score
+        let score = 0;
+        const maxScore = quiz.questions.length;
+        const attemptAnswers = [];
+        
+        for (const question of quiz.questions) {
+            const userAnswer = answers.find(a => a.questionId === question._id.toString());
+            const isCorrect = userAnswer && 
+                (question.correctAnswer === userAnswer.selectedAnswer ||
+                 question.options[question.correctAnswer]?.isCorrect === true);
+            
+            if (isCorrect) score++;
+            
+            attemptAnswers.push({
+                questionId: question._id,
+                selectedAnswer: userAnswer?.selectedAnswer,
+                isCorrect,
+                points: isCorrect ? question.points || 1 : 0,
+                timeSpent: userAnswer?.timeSpent || 0
+            });
+        }
+        
+        const percentage = Math.round((score / maxScore) * 100);
+        const status = percentage >= quiz.passingScore ? 'passed' : 'failed';
+        
+        // Create attempt
+        const attempt = {
+            score,
+            maxScore,
+            percentage,
+            answers: attemptAnswers,
+            timeSpent,
+            ipAddress,
+            userAgent
+        };
+        
+        if (!grade) {
+            // Create new grade record
+            grade = new gradeModel({
+                user: userId,
+                quiz: quizId,
+                attempts: [attempt],
+                bestScore: score,
+                bestPercentage: percentage,
+                totalAttempts: 1,
+                status,
+                firstAttemptAt: new Date(),
+                lastAttemptAt: new Date()
+            });
+        } else {
+            // Add attempt to existing grade
+            grade.attempts.push(attempt);
+            grade.totalAttempts = grade.attempts.length;
+            grade.lastAttemptAt = new Date();
+            
+            // Update best scores
+            if (percentage > grade.bestPercentage) {
+                grade.bestScore = score;
+                grade.bestPercentage = percentage;
+                grade.status = status;
+            }
+        }
+        
+        await grade.save();
+        
+        // Update course progress if quiz passed
+        if (status === 'passed') {
+            await updateCourseProgressAfterQuiz(userId, quiz.course._id);
+        }
+        
+        res.status(200).json({
+            success: true,
+            message: "Quiz submitted successfully",
+            data: {
+                score,
+                maxScore,
+                percentage,
+                status,
+                attempt: grade.totalAttempts,
+                bestPercentage: grade.bestPercentage,
+                passed: status === 'passed',
+                showAnswers: quiz.showCorrectAnswers,
+                results: quiz.showCorrectAnswers ? attemptAnswers : undefined
+            }
+        });
+    } catch (error) {
+        console.error('Submit quiz error:', error);
+        res.status(500).json({ 
+            success: false,
+            message: "Error submitting quiz" 
+        });
+    }
+};
+
+// Helper function to update course progress after quiz completion
+const updateCourseProgressAfterQuiz = async (userId, courseId) => {
+    try {
+        const totalQuizzes = await quizModel.countDocuments({ course: courseId });
+        const passedQuizzes = await gradeModel.countDocuments({ 
+            user: userId, 
+            quiz: { $in: await quizModel.find({ course: courseId }).distinct("_id") },
+            status: 'passed'
+        });
+        
+        const quizProgress = Math.round((passedQuizzes / totalQuizzes) * 100);
+        
+        // Update enrollment progress (this is a simplified version)
+        await enrollmentModel.findOneAndUpdate(
+            { user: userId, course: courseId },
+            { progress: Math.max(quizProgress, 0) },
+            { upsert: true }
+        );
+    } catch (error) {
+        console.error('Error updating course progress:', error);
+    }
 };

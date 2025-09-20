@@ -2,96 +2,256 @@ import courseModel from "../models/courseModel.mjs";
 import userModel from "../models/userModel.mjs";
 
 export const createCourse = async (req, res) => {
-  try {
-    const { title, description, instructorEmail, thumbnailUrl } = req.body;
-
-    // 1. Find the instructor by email (unique & reliable)
-    const instructor = await userModel.findOne({ email: instructorEmail, role: "instructor" });
-    if (!instructor) {
-      return res.status(404).json({ message: "Instructor not found" });
-    }
-    // 2. Check if course already exists for this instructor
-    const existingCourse = await courseModel.findOne({ title, instructor: instructor._id });
-    if (existingCourse) {
-      return res.status(400).json({ message: "Course with this title already exists for this instructor" });
-    }
-
-    // 2. Create the course with instructor._id
-    const newCourse = new courseModel({
-      title,
-      description,
-      instructor: instructor._id, // ✅ Use ObjectId
-      thumbnailUrl
-    });
-
-    await newCourse.save();
-
-    res.status(201).json({
-      message: "Course created successfully",
-      course: newCourse
-    });
-
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Error creating course", error: error.message });
-  }
-};
-
-
-export const getCourses = async (req, res) => {
     try {
-        const courses = await courseModel.find();
-        res.status(200).json({ message: "Courses retrieved successfully", courses });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: "Error retrieving courses" });
-    }
-};
-
-export const getCourseById = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const course = await courseModel.findById(id);
-        if (!course) {
-            return res.status(404).json({ message: "Course not found" });
+        const { 
+            title, 
+            description, 
+            category, 
+            level, 
+            tags, 
+            price, 
+            duration, 
+            maxStudents, 
+            requirements, 
+            learningOutcomes, 
+            thumbnailUrl 
+        } = req.body;
+        
+        // Use authenticated user as instructor or find by email
+        let instructorId;
+        if (req.body.instructorEmail) {
+            const instructor = await userModel.findOne({ 
+                email: req.body.instructorEmail, 
+                role: "instructor",
+                isActive: true 
+            });
+            if (!instructor) {
+                return res.status(404).json({ 
+                    success: false,
+                    message: "Instructor not found" 
+                });
+            }
+            instructorId = instructor._id;
+        } else {
+            // Use authenticated user
+            if (req.user.role !== 'instructor' && req.user.role !== 'admin') {
+                return res.status(403).json({ 
+                    success: false,
+                    message: "Only instructors can create courses" 
+                });
+            }
+            instructorId = req.user.id;
         }
-        res.status(200).json({ message: "Course retrieved successfully", course });
+        
+        // Check if course already exists for this instructor
+        const existingCourse = await courseModel.findOne({ 
+            title: title.trim(), 
+            instructor: instructorId 
+        });
+        if (existingCourse) {
+            return res.status(400).json({ 
+                success: false,
+                message: "Course with this title already exists for this instructor" 
+            });
+        }
+        
+        // Create the course
+        const newCourse = new courseModel({
+            title: title.trim(),
+            description: description.trim(),
+            instructor: instructorId,
+            category: category?.trim(),
+            level,
+            tags: tags?.map(tag => tag.trim()),
+            price: price || 0,
+            duration,
+            maxStudents,
+            requirements: requirements?.map(req => req.trim()),
+            learningOutcomes: learningOutcomes?.map(outcome => outcome.trim()),
+            thumbnailUrl
+        });
+        
+        await newCourse.save();
+        
+        // Populate instructor info
+        await newCourse.populate('instructor', 'name email profilePicture');
+        
+        res.status(201).json({
+            success: true,
+            message: "Course created successfully",
+            data: newCourse
+        });
+        
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: "Error retrieving course" });
+        console.error('Create course error:', error);
+        
+        if (error.name === 'ValidationError') {
+            const validationErrors = Object.values(error.errors).map(err => err.message);
+            return res.status(400).json({ 
+                success: false,
+                message: "Validation error", 
+                errors: validationErrors 
+            });
+        }
+        
+        res.status(500).json({ 
+            success: false,
+            message: "Error creating lesson" 
+        });
     }
 };
 
-export const updateCourse = async (req, res) => {
+// Get all lessons for a course
+export const getCourseLessons = async (req, res) => {
     try {
-        const { id } = req.params;
-        const { title, description, instructor, thumbnailUrl } = req.body;
-        const updatedCourse = await courseModel.findByIdAndUpdate(
-            id,
-            { title, description, instructor, thumbnailUrl },
+        const { courseId } = req.params;
+        const { published } = req.query;
+        
+        const filter = { course: courseId };
+        if (published !== undefined) {
+            filter.isPublished = published === 'true';
+        }
+        
+        const lessons = await lessonModel.find(filter)
+            .populate("course", "title")
+            .sort({ order: 1 })
+            .lean();
+        
+        res.json({
+            success: true,
+            message: "Lessons retrieved successfully",
+            data: lessons
+        });
+    } catch (error) {
+        console.error('Get course lessons error:', error);
+        res.status(500).json({ 
+            success: false,
+            message: "Error fetching lessons" 
+        });
+    }
+};
+
+// Get a single lesson
+export const getLessonById = async (req, res) => {
+    try {
+        const { lessonId } = req.params;
+        
+        const lesson = await lessonModel.findById(lessonId)
+            .populate("course", "title description instructor");
+        
+        if (!lesson) {
+            return res.status(404).json({ 
+                success: false,
+                message: "Lesson not found" 
+            });
+        }
+        
+        res.json({
+            success: true,
+            message: "Lesson retrieved successfully",
+            data: lesson
+        });
+    } catch (error) {
+        console.error('Get lesson by ID error:', error);
+        res.status(500).json({ 
+            success: false,
+            message: "Error fetching lesson" 
+        });
+    }
+};
+
+// Update a lesson
+export const updateLesson = async (req, res) => {
+    try {
+        const { lessonId } = req.params;
+        const updates = req.body;
+        
+        // Remove course from updates
+        delete updates.course;
+        
+        const lesson = await lessonModel.findByIdAndUpdate(
+            lessonId, 
+            updates, 
+            { new: true, runValidators: true }
+        ).populate("course", "title");
+        
+        if (!lesson) {
+            return res.status(404).json({ 
+                success: false,
+                message: "Lesson not found" 
+            });
+        }
+        
+        res.json({ 
+            success: true,
+            message: "Lesson updated successfully", 
+            data: lesson 
+        });
+    } catch (error) {
+        console.error('Update lesson error:', error);
+        res.status(500).json({ 
+            success: false,
+            message: "Error updating lesson" 
+        });
+    }
+};
+
+// Delete a lesson
+export const deleteLesson = async (req, res) => {
+    try {
+        const { lessonId } = req.params;
+        
+        const lesson = await lessonModel.findByIdAndDelete(lessonId);
+        if (!lesson) {
+            return res.status(404).json({ 
+                success: false,
+                message: "Lesson not found" 
+            });
+        }
+        
+        // TODO: Delete related lesson progress records
+        
+        res.json({ 
+            success: true,
+            message: "Lesson deleted successfully" 
+        });
+    } catch (error) {
+        console.error('Delete lesson error:', error);
+        res.status(500).json({ 
+            success: false,
+            message: "Error deleting lesson" 
+        });
+    }
+};
+
+// Publish/Unpublish lesson
+export const toggleLessonPublish = async (req, res) => {
+    try {
+        const { lessonId } = req.params;
+        const { isPublished } = req.body;
+        
+        const lesson = await lessonModel.findByIdAndUpdate(
+            lessonId,
+            { isPublished },
             { new: true }
-        );
-        if (!updatedCourse) {
-            return res.status(404).json({ message: "Course not found" });
+        ).populate("course", "title");
+        
+        if (!lesson) {
+            return res.status(404).json({ 
+                success: false,
+                message: "Lesson not found" 
+            });
         }
-        res.status(200).json({ message: "Course updated successfully", course: updatedCourse });
+        
+        res.json({ 
+            success: true,
+            message: `Lesson ${isPublished ? 'published' : 'unpublished'} successfully`,
+            data: lesson 
+        });
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: "Error updating course" });
+        console.error('Toggle lesson publish error:', error);
+        res.status(500).json({ 
+            success: false,
+            message: "Error updating lesson" 
+        });
     }
-};
-
-export const deleteCourse = async (req, res) => {
-    try {
-        const { id } = req.params;
-        const deletedCourse = await courseModel.findByIdAndDelete(id);
-        if (!deletedCourse) {
-            return res.status(404).json({ message:  "Course not found" });
-        }
-        res.status(200).json({ message: "Course deleted successfully" });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: "Error deleting course" });
-    }
-};
-

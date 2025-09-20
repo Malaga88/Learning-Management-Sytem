@@ -3,116 +3,111 @@ import userModel from "../models/userModel.mjs";
 import quizModel from "../models/quizModel.mjs";
 import enrollmentModel from "../models/enrollmentModel.mjs";
 
-
+// This function is now replaced by submitQuizAttempt in quizController
+// Kept for backward compatibility but marked as deprecated
 export const submitGrade = async (req, res) => {
-  try {
-    const { userId, quizId, score, maxScore, attempt = 1 } = req.body;
-
-
-    const user = await userModel.findById(userId);
-    const quiz = await quizModel.findById(quizId).populate("course");
-    if (!user || !quiz) {
-      return res.status(404).json({ message: "User or quiz not found" });
-    }
-
-
-    const percentage = (score / maxScore) * 100;
-    const status = percentage >= 50 ? "passed" : "failed";
-
-
-    const grade = await gradeModel.findOneAndUpdate(
-      { user: userId, quiz: quizId },
-      { score, maxScore, status, attempt },
-      { new: true, upsert: true, runValidators: true }
-    );
-
-
-    const courseId = quiz.course._id;
-
-
-    let enrollment = await enrollmentModel.findOne({ user: userId, course: courseId });
-    if (!enrollment) {
-      enrollment = await enrollmentModel.create({ user: userId, course: courseId });
-    }
-
-    // Count quizzes in this course
-    const totalQuizzes = await quizModel.countDocuments({ course: courseId });
-
-    // Count how many quizzes user has grades for (passed or failed)
-    const completedQuizzes = await gradeModel.countDocuments({ user: userId, quiz: { $in: await quizModel.find({ course: courseId }).distinct("_id") } });
-
-    // Calculate progress
-    const progress = Math.round((completedQuizzes / totalQuizzes) * 100);
-
-    enrollment.progress = progress;
-    if (progress === 100) {
-      enrollment.status = "completed";
-      enrollment.completedAt = new Date();
-    }
-
-    await enrollment.save();
-
-    res.status(201).json({
-      message: "Grade submitted and progress updated",
-      grade,
-      enrollment,
+    return res.status(400).json({
+        success: false,
+        message: "This endpoint is deprecated. Please use POST /api/quizzes/:id/submit instead"
     });
-  } catch (err) {
-    if (err.code === 11000) {
-      return res.status(400).json({ message: "Grade already exists for this quiz" });
-    }
-    res.status(500).json({ message: "Server error", error: err.message });
-  }
 };
-
 
 export const getGrades = async (req, res) => {
-    try{
-        const {userId} = req.params;
-        const grades = await gradeModel.find({user: userId})
-        .populate("quiz")
-        .populate("user", "name email");
+    try {
+        const { userId } = req.params;
+        const { page = 1, limit = 10 } = req.query;
         
-        res.json(grades);
+        const skip = (parseInt(page) - 1) * parseInt(limit);
+        
+        const grades = await gradeModel.find({ user: userId })
+            .populate({
+                path: "quiz",
+                populate: {
+                    path: "course",
+                    select: "title"
+                }
+            })
+            .populate("user", "name email")
+            .sort({ lastAttemptAt: -1 })
+            .skip(skip)
+            .limit(parseInt(limit))
+            .lean();
+        
+        const total = await gradeModel.countDocuments({ user: userId });
+        
+        res.json({
+            success: true,
+            message: "Grades retrieved successfully",
+            data: grades,
+            pagination: {
+                current: parseInt(page),
+                total: Math.ceil(total / parseInt(limit)),
+                hasNext: skip + parseInt(limit) < total
+            }
+        });
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: "Error fetching grades" });
+        console.error('Get grades error:', error);
+        res.status(500).json({ 
+            success: false,
+            message: "Error fetching grades" 
+        });
     }
 };
-
 
 export const getQuizGrade = async (req, res) => {
-    try{
-        const {quizId} = req.params;
-
-        const grades = await gradeModel.find({quiz: quizId})
-        .populate("user", "name email")
-        .populate("quiz")
-
-        res.json(grades)
-    }catch(err){
-        res.status(500).json({message: "Server error", error: err.message})
+    try {
+        const { quizId } = req.params;
+        
+        const grades = await gradeModel.find({ quiz: quizId })
+            .populate("user", "name email profilePicture")
+            .populate("quiz", "title passingScore")
+            .sort({ bestPercentage: -1 })
+            .lean();
+        
+        res.json({
+            success: true,
+            message: "Quiz grades retrieved successfully",
+            data: grades
+        });
+    } catch (error) {
+        console.error('Get quiz grades error:', error);
+        res.status(500).json({ 
+            success: false,
+            message: "Server error" 
+        });
     }
 };
-
 
 export const getUserQuizGrade = async (req, res) => {
-  try {
-    const { userId, quizId } = req.params;
-
-    const grade = await gradeModel.findOne({ user: userId, quiz: quizId })
-      .populate("user", "name email")
-      .populate("quiz");
-
-    if (!grade) {
-      return res.status(404).json({ message: "No grade found for this quiz" });
+    try {
+        const { userId, quizId } = req.params;
+        
+        const grade = await gradeModel.findOne({ user: userId, quiz: quizId })
+            .populate("user", "name email")
+            .populate({
+                path: "quiz",
+                populate: {
+                    path: "course",
+                    select: "title"
+                }
+            });
+        
+        if (!grade) {
+            return res.status(404).json({ 
+                success: false,
+                message: "No grade found for this quiz" 
+            });
+        }
+        
+        res.json({
+            success: true,
+            data: grade
+        });
+    } catch (error) {
+        console.error('Get user quiz grade error:', error);
+        res.status(500).json({ 
+            success: false,
+            message: "Server error" 
+        });
     }
-
-    res.json(grade);
-  } catch (err) {
-    res.status(500).json({ message: "Server error", error: err.message });
-  }
-};
-
-
-
+  };

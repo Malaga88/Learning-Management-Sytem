@@ -1,4 +1,3 @@
-// src/controllers/lessonController.mjs
 import lessonModel from "../models/lessonModel.mjs";
 import courseModel from "../models/courseModel.mjs";
 import lessonProgressModel from "../models/lessonProgressModel.mjs";

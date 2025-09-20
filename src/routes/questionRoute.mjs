@@ -1,30 +1,92 @@
-import express from "express";
-import Question from "../models/questionModel.mjs";
+import mongoose from "mongoose";
+import bcrypt from "bcrypt";
 
-const questionRouter = express.Router();
-
-// Add a question to a quiz
-questionRouter.post("/", async (req, res) => {
-  try {
-    const { quizId, text, options, correctAnswer } = req.body;
-    const newQuestion = new Question({ quiz: quizId, text, options, correctAnswer });
-    await newQuestion.save();
-    res.status(201).json({ message: "Question created", question: newQuestion });
-  } catch (error) {
-    console.error(error);
-    res.status(500).json({ message: "Error creating question" });
+const userSchema = new mongoose.Schema({
+  name: { 
+    type: String, 
+    required: [true, "Name is required"],
+    trim: true,
+    minlength: [2, "Name must be at least 2 characters"],
+    maxlength: [50, "Name cannot exceed 50 characters"]
+  },
+  email: { 
+    type: String, 
+    unique: true, 
+    required: [true, "Email is required"], 
+    lowercase: true,
+    trim: true,
+    match: [/^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/, "Please enter a valid email"]
+  },
+  password: { 
+    type: String, 
+    required: [true, "Password is required"],
+    minlength: [6, "Password must be at least 6 characters"]
+  },
+  role: { 
+    type: String, 
+    enum: {
+      values: ["admin", "instructor", "student"],
+      message: "Role must be either admin, instructor, or student"
+    }, 
+    default: "student" 
+  },
+  profilePicture: {
+    type: String,
+    default: null
+  },
+  isActive: {
+    type: Boolean,
+    default: true
+  },
+  lastLogin: {
+    type: Date,
+    default: null
+  },
+  emailVerified: {
+    type: Boolean,
+    default: false
+  },
+  bio: {
+    type: String,
+    maxlength: [500, "Bio cannot exceed 500 characters"],
+    trim: true
+  }
+}, { 
+  timestamps: true,
+  toJSON: {
+    transform: function(doc, ret) {
+      delete ret.password;
+      return ret;
+    }
   }
 });
 
-// Get questions for a quiz
-questionRouter.get("/:quizId", async (req, res) => {
+
+userSchema.index({ email: 1 }, { unique: true });
+userSchema.index({ role: 1 });
+userSchema.index({ isActive: 1 });
+
+// Methods
+userSchema.methods.comparePassword = async function(candidatePassword) {
+  return await bcrypt.compare(candidatePassword, this.password);
+};
+
+userSchema.methods.updateLastLogin = function() {
+  this.lastLogin = new Date();
+  return this.save({ validateBeforeSave: false });
+};
+
+
+userSchema.pre('save', async function(next) {
+  if (!this.isModified('password')) return next();
+  
   try {
-    const { quizId } = req.params;
-    const questions = await Question.find({ quiz: quizId });
-    res.json(questions);
+    const salt = await bcrypt.genSalt(12);
+    this.password = await bcrypt.hash(this.password, salt);
+    next();
   } catch (error) {
-    res.status(500).json({ message: "Error fetching questions" });
+    next(error);
   }
 });
 
-export default questionRouter;
+export default mongoose.model("User", userSchema);

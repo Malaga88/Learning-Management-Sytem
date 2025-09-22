@@ -1,31 +1,24 @@
 import express from "express";
-import {
-  createQuiz,
-  getQuizzes,
-  getQuizById,
-  updateQuiz,
-  deleteQuiz,
-  checkAnswer
-} from "../controllers/quizController.mjs";
+import { verifyToken, authorize } from "../middleware/auth.mjs";
+import { quizLimiter } from "../middleware/rateLimit.mjs";
+import validate from "../middleware/validate.mjs";
+import asyncHandler from "../middleware/asyncHandler.mjs";
+import { createQuizSchema, updateQuizSchema } from "../validators/quizValidator.mjs";
+import { createQuiz, getQuizzes, getQuiz, updateQuiz, deleteQuiz, submitQuiz } from "../controllers/quizController.mjs";
 
 const quizRouter = express.Router();
 
-// Create a new quiz
-quizRouter.post("/", createQuiz);
+quizRouter
+  .route("/")
+  .get(asyncHandler(getQuizzes))
+  .post(verifyToken, authorize("instructor", "admin"), validate(createQuizSchema), asyncHandler(createQuiz));
 
-// Get all quizzes
-quizRouter.get("/", getQuizzes);
+quizRouter
+  .route("/:id")
+  .get(asyncHandler(getQuiz))
+  .patch(verifyToken, authorize("instructor", "admin"), validate(updateQuizSchema), asyncHandler(updateQuiz))
+  .delete(verifyToken, authorize("instructor", "admin"), asyncHandler(deleteQuiz));
 
-// Get quiz by ID
-quizRouter.get("/:id", getQuizById);
-
-// Update quiz
-quizRouter.put("/:id", updateQuiz);
-
-// Delete quiz
-quizRouter.delete("/:id", deleteQuiz);
-
-// Check answer for a quiz
-quizRouter.post("/:id/check", checkAnswer);
+quizRouter.post("/:id/submit", verifyToken, quizLimiter, asyncHandler(submitQuiz));
 
 export default quizRouter;

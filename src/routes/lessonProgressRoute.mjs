@@ -1,12 +1,35 @@
-import express from "express";
-import { markLessonComplete, getUserCourseProgress } from "../controllers/lessonProgressController.mjs";
+import { 
+    updateLessonProgress,
+    markLessonComplete, 
+    getUserCourseProgress,
+    getLessonProgress
+} from "../controllers/lessonProgressController.mjs";
+import { verifyToken } from "../middleware/auth.mjs";
+import { validate, schemas } from "../middleware/validation.mjs";
 
 const lessonProgressRouter = express.Router();
 
-// Mark a lesson as complete
-lessonProgressRouter.post("/complete", markLessonComplete);
+// All routes require authentication
+lessonProgressRouter.post("/update",
+    verifyToken,
+    validate(schemas.updateLessonProgress),
+    updateLessonProgress
+);
 
-// Get progress + percentage for a user in a course
-lessonProgressRouter.get("/:userId/course/:courseId", getUserCourseProgress);
+// Backward compatibility
+lessonProgressRouter.post("/complete",
+    verifyToken,
+    markLessonComplete
+);
+
+lessonProgressRouter.get("/:userId/course/:courseId",
+    verifyToken,
+    getUserCourseProgress
+);
+
+lessonProgressRouter.get("/:userId/lesson/:lessonId",
+    verifyToken,
+    getLessonProgress
+);
 
 export default lessonProgressRouter;

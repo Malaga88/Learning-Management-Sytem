@@ -1,7 +1,8 @@
 import mongoose from "mongoose";
 import bcrypt from "bcrypt";
+import crypto from "crypto";
 
-const userModel = new mongoose.Schema({
+const userSchema = new mongoose.Schema({
   name: { 
     type: String, 
     required: [true, "Name is required"],
@@ -46,38 +47,81 @@ const userModel = new mongoose.Schema({
     type: Boolean,
     default: false
   },
+  emailVerificationToken: {
+    type: String,
+    default: null
+  },
+  emailVerificationExpires: {
+    type: Date,
+    default: null
+  },
+  passwordResetToken: {
+    type: String,
+    default: null
+  },
+  passwordResetExpires: {
+    type: Date,
+    default: null
+  },
   bio: {
     type: String,
     maxlength: [500, "Bio cannot exceed 500 characters"],
     trim: true
+  },
+  preferences: {
+    language: { type: String, default: 'en' },
+    timezone: { type: String, default: 'UTC' },
+    notifications: {
+      email: { type: Boolean, default: true },
+      courseUpdates: { type: Boolean, default: true },
+      marketing: { type: Boolean, default: false }
+    }
   }
 }, { 
   timestamps: true,
   toJSON: {
     transform: function(doc, ret) {
       delete ret.password;
+      delete ret.emailVerificationToken;
+      delete ret.passwordResetToken;
       return ret;
     }
   }
 });
 
-
-userModel.index({ email: 1 }, { unique: true });
-userModel.index({ role: 1 });
-userModel.index({ isActive: 1 });
+// Indexes
+userSchema.index({ email: 1 }, { unique: true });
+userSchema.index({ role: 1 });
+userSchema.index({ isActive: 1 });
+userSchema.index({ emailVerificationToken: 1 });
+userSchema.index({ passwordResetToken: 1 });
 
 // Methods
-userModel.methods.comparePassword = async function(candidatePassword) {
+userSchema.methods.comparePassword = async function(candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
 
-userModel.methods.updateLastLogin = function() {
+userSchema.methods.updateLastLogin = function() {
   this.lastLogin = new Date();
   return this.save({ validateBeforeSave: false });
 };
 
+userSchema.methods.createEmailVerificationToken = function() {
+  const token = crypto.randomBytes(32).toString('hex');
+  this.emailVerificationToken = crypto.createHash('sha256').update(token).digest('hex');
+  this.emailVerificationExpires = Date.now() + 24 * 60 * 60 * 1000; // 24 hours
+  return token;
+};
 
-userModel.pre('save', async function(next) {
+userSchema.methods.createPasswordResetToken = function() {
+  const token = crypto.randomBytes(32).toString('hex');
+  this.passwordResetToken = crypto.createHash('sha256').update(token).digest('hex');
+  this.passwordResetExpires = Date.now() + 60 * 60 * 1000; // 1 hour
+  return token;
+};
+
+// Pre-save hook for password hashing
+userSchema.pre('save', async function(next) {
   if (!this.isModified('password')) return next();
   
   try {
@@ -89,4 +133,4 @@ userModel.pre('save', async function(next) {
   }
 });
 
-export default mongoose.model("User", userModel);
+export default mongoose.model("User", userSchema);

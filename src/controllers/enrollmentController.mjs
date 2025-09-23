@@ -1,7 +1,10 @@
 import enrollmentModel from "../models/enrollmentModel.mjs";
 import userModel from "../models/userModel.mjs";
 import courseModel from "../models/courseModel.mjs";
+import emailService from "../services/emailService.mjs";
+import certificateService from "../services/certificateService.mjs";
 
+// Enhanced enrollment with email notification
 export const enrollInCourse = async (req, res) => {
     try {
         const { userId, courseId, paymentAmount = 0 } = req.body;
@@ -16,7 +19,7 @@ export const enrollInCourse = async (req, res) => {
         }
         
         // Validate course exists and is published
-        const course = await courseModel.findById(courseId);
+        const course = await courseModel.findById(courseId).populate('instructor', 'name email');
         if (!course) {
             return res.status(404).json({ 
                 success: false,
@@ -47,10 +50,12 @@ export const enrollInCourse = async (req, res) => {
         
         if (existingEnrollment) {
             if (existingEnrollment.status === 'dropped') {
-                // Re-activate dropped enrollment
                 existingEnrollment.status = 'active';
                 existingEnrollment.enrolledAt = new Date();
                 await existingEnrollment.save();
+                
+                // Send re-enrollment email
+                await emailService.sendCourseEnrollmentEmail(user, course);
                 
                 return res.status(200).json({
                     success: true,
@@ -81,6 +86,9 @@ export const enrollInCourse = async (req, res) => {
             { $inc: { currentEnrollments: 1 } }
         );
         
+        // Send enrollment confirmation email
+        await emailService.sendCourseEnrollmentEmail(user, course);
+        
         // Populate enrollment data
         await newEnrollment.populate([
             { path: 'user', select: 'name email' },
@@ -98,6 +106,76 @@ export const enrollInCourse = async (req, res) => {
         res.status(500).json({ 
             success: false,
             message: "Error enrolling in course" 
+        });
+    }
+};
+
+// Generate certificate for completed course
+export const generateCertificate = async (req, res) => {
+    try {
+        const { enrollmentId } = req.params;
+        
+        const enrollment = await enrollmentModel.findById(enrollmentId)
+            .populate('user')
+            .populate('course');
+        
+        if (!enrollment) {
+            return res.status(404).json({
+                success: false,
+                message: "Enrollment not found"
+            });
+        }
+        
+        if (enrollment.status !== 'completed') {
+            return res.status(400).json({
+                success: false,
+                message: "Course must be completed to generate certificate"
+            });
+        }
+        
+        if (enrollment.certificateIssued) {
+            return res.status(400).json({
+                success: false,
+                message: "Certificate already issued for this enrollment"
+            });
+        }
+        
+        // Generate certificate
+        const certificate = await certificateService.generateCertificate(
+            enrollment.user,
+            enrollment.course,
+            enrollment.completedAt
+        );
+        
+        if (!certificate.success) {
+            return res.status(500).json({
+                success: false,
+                message: "Error generating certificate",
+                error: certificate.error
+            });
+        }
+        
+        // Update enrollment with certificate info
+        enrollment.certificateIssued = true;
+        enrollment.certificateUrl = certificate.url;
+        await enrollment.save();
+        
+        // Send certificate email
+        await emailService.sendCertificateEmail(enrollment.user, enrollment.course, certificate.url);
+        
+        res.json({
+            success: true,
+            message: "Certificate generated successfully",
+            data: {
+                certificateUrl: certificate.url,
+                certificateId: certificate.certificateId
+            }
+        });
+    } catch (error) {
+        console.error('Certificate generation error:', error);
+        res.status(500).json({
+            success: false,
+            message: "Error generating certificate"
         });
     }
 };

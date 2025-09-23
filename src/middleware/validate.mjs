@@ -2,6 +2,7 @@ import Joi from 'joi';
 
 // Generic validation middleware
 export const validate = (schema) => {
+
     return (req, res, next) => {
         const { error, value } = schema.validate(req.body, {
             abortEarly: false,
@@ -192,5 +193,45 @@ export const schemas = {
         })).required(),
         timeSpent: Joi.number().min(0).default(0),
         userAgent: Joi.string().max(500).allow('')
+    })
+};
+
+
+const additionalSchemas = {
+    verifyEmail: Joi.object({
+        token: Joi.string().required()
+    }),
+    
+    resendVerification: Joi.object({
+        email: Joi.string().email().lowercase().trim().required()
+    }),
+    
+    forgotPassword: Joi.object({
+        email: Joi.string().email().lowercase().trim().required()
+    }),
+    
+    resetPassword: Joi.object({
+        token: Joi.string().required(),
+        newPassword: Joi.string().min(6).max(128).required()
+    }),
+    
+    changePassword: Joi.object({
+        currentPassword: Joi.string().required(),
+        newPassword: Joi.string().min(6).max(128).required()
+    }),
+    
+    updateProfile: Joi.object({
+        name: Joi.string().trim().min(2).max(50),
+        bio: Joi.string().trim().max(500).allow(''),
+        profilePicture: Joi.string().uri().allow(''),
+        preferences: Joi.object({
+            language: Joi.string().valid('en', 'es', 'fr', 'de', 'it'),
+            timezone: Joi.string(),
+            notifications: Joi.object({
+                email: Joi.boolean(),
+                courseUpdates: Joi.boolean(),
+                marketing: Joi.boolean()
+            })
+        })
     })
 };

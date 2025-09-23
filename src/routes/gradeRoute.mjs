@@ -1,23 +1,33 @@
 import express from "express";
 import {
-  submitGrade,
-  getGrades,
-  getQuizGrade,
-  getUserQuizGrade,
+    submitGrade,
+    getGrades,
+    getQuizGrade,
+    getUserQuizGrade
 } from "../controllers/gradeController.mjs";
+import { verifyToken, authorize } from "../middleware/auth.mjs";
 
 const gradeRouter = express.Router();
 
-// POST /api/grades → submit grade
-gradeRouter.post("/", submitGrade);
+// Deprecated route
+gradeRouter.post("/", verifyToken, submitGrade);
 
-// GET /api/grades/user/:userId → all grades for user
-gradeRouter.get("/user/:userId", getGrades);
+// Student routes
+gradeRouter.get("/user/:userId",
+    verifyToken,
+    getGrades
+);
 
-// GET /api/grades/quiz/:quizId → all grades for a quiz
-gradeRouter.get("/quiz/:quizId", getQuizGrade);
+gradeRouter.get("/:userId/:quizId",
+    verifyToken,
+    getUserQuizGrade
+);
 
-// GET /api/grades/:userId/:quizId → one grade
-gradeRouter.get("/:userId/:quizId", getUserQuizGrade);
+// Instructor/Admin routes
+gradeRouter.get("/quiz/:quizId",
+    verifyToken,
+    authorize('instructor', 'admin'),
+    getQuizGrade
+);
 
 export default gradeRouter;

@@ -1,24 +1,48 @@
 import express from "express";
-import { verifyToken, authorize } from "../middleware/auth.mjs";
-import { quizLimiter } from "../middleware/rateLimit.mjs";
-import validate from "../middleware/validate.mjs";
-import asyncHandler from "../middleware/asyncHandler.mjs";
-import { createQuizSchema, updateQuizSchema } from "../validators/quizValidator.mjs";
-import { createQuiz, getQuizzes, getQuiz, updateQuiz, deleteQuiz, submitQuiz } from "../controllers/quizController.mjs";
+import {
+    createQuiz,
+    getQuizzes,
+    getQuizById,
+    updateQuiz,
+    deleteQuiz,
+    submitQuizAttempt
+} from "../controllers/quizController.mjs";
+import { verifyToken, authorize, optionalAuth } from "../middleware/auth.mjs";
+import { validate, schemas } from "../middleware/validation.mjs";
+import { quizLimiter } from "../middleware/rateLimiting.mjs";
 
 const quizRouter = express.Router();
 
-quizRouter
-  .route("/")
-  .get(asyncHandler(getQuizzes))
-  .post(verifyToken, authorize("instructor", "admin"), validate(createQuizSchema), asyncHandler(createQuiz));
+// Public/Student routes
+quizRouter.get("/", optionalAuth, getQuizzes);
+quizRouter.get("/:id", optionalAuth, getQuizById);
 
-quizRouter
-  .route("/:id")
-  .get(asyncHandler(getQuiz))
-  .patch(verifyToken, authorize("instructor", "admin"), validate(updateQuizSchema), asyncHandler(updateQuiz))
-  .delete(verifyToken, authorize("instructor", "admin"), asyncHandler(deleteQuiz));
+// Protected student routes
+quizRouter.post("/:id/submit",
+    verifyToken,
+    quizLimiter,
+    validate(schemas.submitQuizAttempt),
+    submitQuizAttempt
+);
 
-quizRouter.post("/:id/submit", verifyToken, quizLimiter, asyncHandler(submitQuiz));
+// Instructor/Admin routes
+quizRouter.post("/",
+    verifyToken,
+    authorize('instructor', 'admin'),
+    validate(schemas.createQuiz),
+    createQuiz
+);
+
+quizRouter.put("/:id",
+    verifyToken,
+    authorize('instructor', 'admin'),
+    updateQuiz
+);
+
+quizRouter.delete("/:id",
+    verifyToken,
+    authorize('instructor', 'admin'),
+    deleteQuiz
+);
 
 export default quizRouter;
